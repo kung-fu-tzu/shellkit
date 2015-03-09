@@ -103,36 +103,35 @@ class RemoteShell
   end
 
   def mktemp
-    i, o, e, w = Open3.popen3(*ssh_command, "mktemp -d")
-    i.close
-    e.close
-    name = o.read.chomp
-    o.close
-    status = w.value.exitstatus
-    raise "failed to open ssh connection" if status == 255
-    raise "failed to mktemp with status '#{status}'" unless status == 0
-    name
-  end
-  def file_write path, data
-    i, o, e, w = Open3.popen3(*ssh_command, "cat >#{path}")
-    o.close
-    e.close
-    i.write data
-    i.close
-    status = w.value.exitstatus
-    raise "failed to open ssh connection" if status == 255
-    raise "failed to write file '#{path}' with status '#{status}'" unless status == 0
+    read_cmd("mktemp -d").chomp
   end
   def file_read path
-    i, o, e, w = Open3.popen3(*ssh_command, "cat #{path}")
+    read_cmd("cat #{path}")
+  end
+  def file_write path, data
+    write_cmd("cat >#{path}", data)
+  end
+
+  def read_cmd cmd
+    i, o, e, w = Open3.popen3(*ssh_command, cmd)
     i.close
     e.close
     data = o.read
     o.close
     status = w.value.exitstatus
     raise "failed to open ssh connection" if status == 255
-    raise "failed to read file '#{path}' with status '#{status}'" unless status == 0
+    raise "failed to read command '#{cmd}' with status '#{status}'" unless status == 0
     data
+  end
+  def write_cmd cmd, data
+    i, o, e, w = Open3.popen3(*ssh_command, cmd)
+    o.close
+    e.close
+    i.write data
+    i.close
+    status = w.value.exitstatus
+    raise "failed to open ssh connection" if status == 255
+    raise "failed to write to command '#{cmd}' with status '#{status}'" unless status == 0
   end
 
   def close
