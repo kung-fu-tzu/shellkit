@@ -16,6 +16,7 @@ require 'open3'
 
 # TODO: set up timeouts
 
+# TODO: try subclass IO: RemoteShell < IO
 
 class RemoteShell
   class Capture < ::Array
@@ -23,14 +24,30 @@ class RemoteShell
   end
 
   class Run
-    attr_reader :id, :status
-    def initialize sh, id, status
+    @@id = 0
+    attr_reader :cmd, :status
+    def initialize sh, cmd
       @sh = sh
-      @id = id
-      @status = status
+      @cmd = cmd
+    end
+    def run
+      return unless @sh
+      @sh.file_write "#{prefix}-cmd", @cmd
+      @sh.write ". #{prefix}-cmd </dev/null >#{prefix}-out 2>#{prefix}-err; echo $?\n"
+      status = @sh.readline.chomp
+      @status = status == '' ? nil : status.to_i
+      @sh = nil # ensure single run
+      self
     end
     def stdout
-      
+      @sh.file_read("#{@prefix}-out")
+    end
+    def stderr
+      @sh.file_read("#{@prefix}-err")
+    end
+  private
+    def prefix
+      @prefix ||= "#{@sh.tmpdir}/run-#{@sh.next_id}"
     end
   end
 
@@ -66,22 +83,23 @@ class RemoteShell
     @capture_stack.pop
   end
 
-  def next_run_id
-    @run_id ||= 0
-    @run_id += 1
+  def write data
+    @in.write data
+  end
+  def readline
+    @out.readline
   end
   def run cmd
-    run_id = next_run_id
-    prefix = "#{tmpdir}/run-#{run_id}"
-    file_write "#{prefix}-cmd", cmd
-    @in.write ". #{prefix}-cmd </dev/null >#{prefix}-out 2>#{prefix}-err; echo $?\n"
-    status = @out.readline.chomp
-    status = status == '' ? nil : status.to_i
-    return Run.new(self, run_id, status)
+    Run.new(self, cmd).run
   end
 
   def tmpdir
     @tmpdir ||= mktemp
+  end
+  def next_id
+    # store all the uniq data in one place - shell
+    @id ||= 0
+    @id += 1
   end
 
   def mktemp
@@ -89,6 +107,7 @@ class RemoteShell
     i.close
     e.close
     name = o.read.chomp
+    o.close
     status = w.value.exitstatus
     raise "failed to open ssh connection" if status == 255
     raise "failed to mktemp with status '#{status}'" unless status == 0
@@ -105,16 +124,15 @@ class RemoteShell
     raise "failed to write file '#{path}' with status '#{status}'" unless status == 0
   end
   def file_read path
-    io = IO.popen([*ssh_command, "cat #{path}"], 'r')
-    data = io.read
-    io.close
-    return data
-  end
-  def read_file_read path
-    io = IO.popen([*ssh_command, "cat #{path}"], 'r')
-    data = io.read
-    io.close
-    return data
+    i, o, e, w = Open3.popen3(*ssh_command, "cat #{path}")
+    i.close
+    e.close
+    data = o.read
+    o.close
+    status = w.value.exitstatus
+    raise "failed to open ssh connection" if status == 255
+    raise "failed to read file '#{path}' with status '#{status}'" unless status == 0
+    data
   end
 
   def close
