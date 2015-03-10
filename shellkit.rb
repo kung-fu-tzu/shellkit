@@ -100,6 +100,7 @@ class RemoteShell
     write_cmd("cat >#{path}", data)
   end
 
+  class CmdError < RuntimeError; end
   def read_cmd cmd
     p = ssh(cmd)
     p.in.close
@@ -107,8 +108,8 @@ class RemoteShell
     data = p.out.read
     p.out.close
     status = p.wait.value.exitstatus
-    raise "failed to open ssh connection" if status == 255
-    raise "failed to read command '#{cmd}' with status '#{status}'" unless status == 0
+    raise CmdError, "failed to open ssh connection" if status == 255
+    raise CmdError, "failed to read command '#{cmd}' with status '#{status}'" unless status == 0
     data
   end
   def write_cmd cmd, data
@@ -118,8 +119,8 @@ class RemoteShell
     p.in.write data
     p.in.close
     status = p.wait.value.exitstatus
-    raise "failed to open ssh connection" if status == 255
-    raise "failed to write to command '#{cmd}' with status '#{status}'" unless status == 0
+    raise CmdError, "failed to open ssh connection" if status == 255
+    raise CmdError, "failed to write to command '#{cmd}' with status '#{status}'" unless status == 0
   end
 
   Process = Struct.new(:in, :out, :err, :wait)
