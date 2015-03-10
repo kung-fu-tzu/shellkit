@@ -29,15 +29,7 @@ class RemoteShell
     def initialize sh, cmd
       @sh = sh
       @cmd = cmd
-    end
-    def run
-      return unless @sh
-      @sh.file_write "#{prefix}-cmd", @cmd
-      @sh.write ". #{prefix}-cmd </dev/null >#{prefix}-out 2>#{prefix}-err; echo $?\n"
-      status = @sh.readline.chomp
-      @status = status == '' ? nil : status.to_i
-      @sh = nil # ensure single run
-      self
+      run
     end
     def stdout
       @sh.file_read("#{@prefix}-out")
@@ -49,26 +41,24 @@ class RemoteShell
     def prefix
       @prefix ||= "#{@sh.tmpdir}/run-#{@sh.next_id}"
     end
+    def run
+      # the actual magic
+      @sh.file_write "#{prefix}-cmd", @cmd
+      @sh.write ". #{prefix}-cmd </dev/null >#{prefix}-out 2>#{prefix}-err; echo $?\n"
+      status = @sh.readline.chomp
+      @status = status == '' ? nil : status.to_i
+    end
+    # delegate to stdout string
+    alias :to_s :stdout
   end
 
-  def initialize args, &block
-    @ssh_args = args
-    
-    @ssh_multiplexing = ['-S', "#{local_tmpdir}/ssh-%r@%h:%p"]
+  def initialize opts, &block
+    @ssh_opts = opts
     
     # -M for master connection
-    @in, @out, @err, @wait_thread = Open3.popen3(*ssh_command, '-M', 'bash -')
-    # flush immediately
-    @in.sync = true
-    # Thread.new do
-    #   @out.each_char { |char| print char }
-    # end
+    @master = ssh('-M', 'bash -')
     
     as_dsl block if block
-  end
-
-  def local_tmpdir
-    @local_tmpdir ||= Dir.mktmpdir(self.class.name.gsub(/\W/,'-'), '/tmp/')
   end
 
   def as_dsl block
@@ -83,18 +73,8 @@ class RemoteShell
     @capture_stack.pop
   end
 
-  def write data
-    @in.write data
-  end
-  def readline
-    @out.readline
-  end
-  def run cmd
-    Run.new(self, cmd).run
-  end
-
   def tmpdir
-    @tmpdir ||= mktemp
+    @tmpdir ||= read_cmd("mktemp -d").chomp
   end
   def next_id
     # store all the uniq data in one place - shell
@@ -102,9 +82,17 @@ class RemoteShell
     @id += 1
   end
 
-  def mktemp
-    read_cmd("mktemp -d").chomp
+  def run cmd
+    Run.new(self, cmd)
   end
+
+  def write data
+    @master.in.write data
+  end
+  def readline
+    @master.out.readline
+  end
+
   def file_read path
     read_cmd("cat #{path}")
   end
@@ -113,38 +101,47 @@ class RemoteShell
   end
 
   def read_cmd cmd
-    i, o, e, w = Open3.popen3(*ssh_command, cmd)
-    i.close
-    e.close
-    data = o.read
-    o.close
-    status = w.value.exitstatus
+    p = ssh(cmd)
+    p.in.close
+    p.err.close
+    data = p.out.read
+    p.out.close
+    status = p.wait.value.exitstatus
     raise "failed to open ssh connection" if status == 255
     raise "failed to read command '#{cmd}' with status '#{status}'" unless status == 0
     data
   end
   def write_cmd cmd, data
-    i, o, e, w = Open3.popen3(*ssh_command, cmd)
-    o.close
-    e.close
-    i.write data
-    i.close
-    status = w.value.exitstatus
+    p = ssh(cmd)
+    p.out.close
+    p.err.close
+    p.in.write data
+    p.in.close
+    status = p.wait.value.exitstatus
     raise "failed to open ssh connection" if status == 255
     raise "failed to write to command '#{cmd}' with status '#{status}'" unless status == 0
   end
 
-  def close
-    @in.close
-    @out.close
-    @err.close
-    @wait_thread.value
-    FileUtils.remove_entry local_tmpdir
-  end
-  
-  def ssh_command
+  Process = Struct.new(:in, :out, :err, :wait)
+  def ssh *cmd
     # http://en.wikibooks.org/wiki/OpenSSH/Cookbook/Multiplexing
-    ['ssh', *@ssh_multiplexing, *@ssh_args]
+    multiplexing = ['-S', "#{local_tmpdir}/ssh-%r@%h:%p"]
+    p = Process.new *Open3.popen3('ssh', *multiplexing, *@ssh_opts, *cmd)
+    # flush immediately
+    p.in.sync = true
+    p
+  end
+
+  def close
+    FileUtils.remove_entry local_tmpdir
+    @master.in.close
+    @master.out.close
+    @master.err.close
+    @master.wait.value
+  end
+
+  def local_tmpdir
+    @local_tmpdir ||= Dir.mktmpdir(self.class.name.gsub(/\W/,'-'), '/tmp/')
   end
 end
 
@@ -156,6 +153,6 @@ end
 RemoteShell.new 'default' do
   # h = capture { p run 'id' }
   # p h.stdout
-  run 'ls / | cat > xxx.txt'
-  p file_read 'xxx.txt'
+  puts run('ls / | grep m').to_s
+  # p file_read 'xxx.txt'
 end
