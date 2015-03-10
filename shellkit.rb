@@ -20,6 +20,7 @@ require 'open3'
 
 # TODO: live streams with exec 3<> and /dev/tcp
 # read more: http://www.linuxjournal.com/content/more-using-bashs-built-devtcp-file-tcpip
+# or better use a combination of the current method with tail -f as Sysoev said about logging.
 
 class RemoteShell
   class Capture < ::Array
