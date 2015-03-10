@@ -18,6 +18,9 @@ require 'open3'
 
 # TODO: try subclass IO: RemoteShell < IO
 
+# TODO: live streams with exec 3<> and /dev/tcp
+# read more: http://www.linuxjournal.com/content/more-using-bashs-built-devtcp-file-tcpip
+
 class RemoteShell
   class Capture < ::Array
     # TODO: push each Run to the current Capture, then "jQuery" on the ary of Runs
