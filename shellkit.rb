@@ -41,6 +41,9 @@ class RemoteShell
     def stderr
       @stderr ||= @sh.file_read("#{@prefix}-err")
     end
+    def method_missing mid, *args
+      stdout.send mid, *args
+    end
   private
     def prefix
       @prefix ||= "#{@sh.tmpdir}/run-#{@sh.next_id}"
@@ -158,6 +161,6 @@ end
 RemoteShell.new 'default' do
   # h = capture { p run 'id' }
   # p h.stdout
-  puts run('ls / | grep m').to_s
+  print run('ls /')
   # p file_read 'xxx.txt'
 end
