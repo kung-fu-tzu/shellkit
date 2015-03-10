@@ -35,10 +35,10 @@ class RemoteShell
       run
     end
     def stdout
-      @sh.file_read("#{@prefix}-out")
+      @stdout ||= @sh.file_read("#{@prefix}-out")
     end
     def stderr
-      @sh.file_read("#{@prefix}-err")
+      @stderr ||= @sh.file_read("#{@prefix}-err")
     end
   private
     def prefix
